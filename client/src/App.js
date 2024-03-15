@@ -1,15 +1,8 @@
 import React, { useState } from 'react';
 import Dexie from 'dexie';
 import { useLiveQuery } from 'dexie-react-hooks';
-import setupWebSocketSyncProtocol from './WebSocketSyncProtocol';
-
-setupWebSocketSyncProtocol();
-
-// Initialize Dexie Database
-const db = new Dexie('CustomerDB');
-db.version(1).stores({
-  customers: '++id, firstName, lastName, email'
-});
+import './WebSocketSyncProtocol';
+import { db } from './db';
 
 db.syncable.connect('websocket', 'ws://localhost:8080');
 db.syncable.on('statusChanged', (newStatus, url) => {

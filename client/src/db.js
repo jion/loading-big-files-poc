@@ -1,6 +1,8 @@
 import Dexie from 'dexie';
 
-export const db = new Dexie('CustomerDB');
+const db = new Dexie('CustomerDB');
 db.version(1).stores({
-    customers: '++id, firstName, lastName, email'
+    customers: '$$id, firstName, lastName, email'
 });
+
+export { db };

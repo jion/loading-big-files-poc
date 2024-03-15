@@ -14,26 +14,17 @@
     applied after client changes.
  */
 
-var ws = require("nodejs-websocket"); // This will work also in browser if "websocketserver-shim.js" is included.
+const ws = require("nodejs-websocket"); // This will work also in browser if "websocketserver-shim.js" is included.
+const { Customer, Change } = require('./schemas'); // Adjust the path as necessary
 
 // CREATE / UPDATE / DELETE constants:
 var CREATE = 1,
     UPDATE = 2,
     DELETE = 3;
 
-function SyncServer(port) {
-    // This sample sync server works against a RAM database - an object of tables + an array of changes to the database
 
-    // ----------------------------------------------------------------------------
-    //
-    //
-    //
-    //                               THE DATABASE
-    //
-    //
-    //
-    // ----------------------------------------------------------------------------
-    var db = {
+function newMemoryDB() {
+    return {
         tables: {},  // Tables: Each key is a table and its value is another object where each key is the primary key and value is the record / object that is stored in ram.
         changes: [], // Special table that records all changes made to the db. In this simple sample, we let it grow infinitly. In real world, we would have had a regular cleanup of old changes.
         uncommittedChanges: {}, // Map<clientID,Array<change>> Changes where partial=true buffered for being committed later on.
@@ -105,21 +96,102 @@ function SyncServer(port) {
         unsubscribe: function (fn) {
             db.subscribers.splice(db.subscribers.indexOf(fn), 1);
         }
-    };
+    }
+}
 
 
 
+function SyncServer(port) {
+    // This sample sync server works against a RAM database - an object of tables + an array of changes to the database
 
+    // ----------------------------------------------------------------------------
+    //
+    //
+    //
+    //                               THE DATABASE
+    //
+    //
+    //
+    // ----------------------------------------------------------------------------
+    var db = {
+        tables: {},  // Tables: Each key is a table and its value is another object where each key is the primary key and value is the record / object that is stored in ram.
+        changes: [], // Special table that records all changes made to the db. In this simple sample, we let it grow infinitly. In real world, we would have had a regular cleanup of old changes.
+        uncommittedChanges: {}, // Map<clientID,Array<change>> Changes where partial=true buffered for being committed later on.
+        revision: 0, // Current revision of the database.
+        subscribers: [], // Subscribers to when database got changes. Used by server connections to be able to push out changes to their clients as they occur.
 
+        async create(table, key, obj, clientIdentity) {
+            if (table === 'customers') {
+                const customer = new Customer(obj);
+                await customer.save();
 
+                const change = new Change({
+                    rev: ++this.revision,
+                    source: clientIdentity,
+                    type: CREATE,
+                    table,
+                    key: customer._id, // Assuming _id is the primary key
+                    obj
+                });
+                await change.save();
+                this.trigger();
+            }
+        },
+        async update(table, key, modifications, clientIdentity) {
+            if (table === 'customers') {
+                const customer = await Customer.findById(key);
+                if (customer) {
+                    Object.keys(modifications).forEach((modKey) => {
+                        customer[modKey] = modifications[modKey];
+                    });
+                    await customer.save();
 
+                    const change = new Change({
+                        rev: ++this.revision,
+                        source: clientIdentity,
+                        type: UPDATE,
+                        table,
+                        key,
+                        mods: modifications
+                    });
+                    await change.save();
+                    this.trigger();
+                }
+            }
+        },
+        async delete(table, key, clientIdentity) {
+            if (table === 'customers') {
+                await Customer.findByIdAndDelete(key);
 
-
-
-
-
-
-
+                const change = new Change({
+                    rev: ++this.revision,
+                    source: clientIdentity,
+                    type: DELETE,
+                    table,
+                    key
+                });
+                await change.save();
+                this.trigger();
+            }
+        },
+        trigger: function () {
+            if (!db.trigger.delayedHandle) {
+                // Delay the trigger so that it's only called once per bunch of changes instead of being called for each single change.
+                db.trigger.delayedHandle = setTimeout(function () {
+                    delete db.trigger.delayedHandle;
+                    db.subscribers.forEach(function (subscriber) {
+                        try { subscriber(); } catch (e) { }
+                    });
+                }, 0);
+            }
+        },
+        subscribe: function (fn) {
+            db.subscribers.push(fn);
+        },
+        unsubscribe: function (fn) {
+            db.subscribers.splice(db.subscribers.indexOf(fn), 1);
+        }
+    }
 
     // ----------------------------------------------------------------------------
     //

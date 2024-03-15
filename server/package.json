@@ -12,6 +12,7 @@
   "dependencies": {
     "dexie": "^3.2.6",
     "mongodb": "^6.5.0",
+    "mongoose": "^8.2.2",
     "nodejs-websocket": "^1.7.2",
     "ws": "^8.16.0"
   }

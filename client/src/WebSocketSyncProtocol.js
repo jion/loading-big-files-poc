@@ -144,4 +144,4 @@ function setupWebSocketSyncProtocol() {
   });
 }
 
-export default setupWebSocketSyncProtocol;
+setupWebSocketSyncProtocol();
