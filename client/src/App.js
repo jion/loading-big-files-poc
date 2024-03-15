@@ -1,61 +1,76 @@
 import React, { useState } from 'react';
-import './App.css';
+import Dexie from 'dexie';
+import { useLiveQuery } from 'dexie-react-hooks';
+import setupWebSocketSyncProtocol from './WebSocketSyncProtocol';
 
-function App() {
-  const [customer, setCustomer] = useState({
+setupWebSocketSyncProtocol();
+
+// Initialize Dexie Database
+const db = new Dexie('CustomerDB');
+db.version(1).stores({
+  customers: '++id, firstName, lastName, email'
+});
+
+db.syncable.connect('websocket', 'ws://localhost:8080');
+db.syncable.on('statusChanged', (newStatus, url) => {
+  console.log(`Sync Status: ${Dexie.Syncable.StatusTexts[newStatus]}`);
+});
+
+function CustomerDataComponent() {
+  const [newCustomer, setNewCustomer] = useState({
     firstName: '',
     lastName: '',
     email: ''
   });
-  const [ws, setWs] = useState(new WebSocket('ws://localhost:8080'));
 
-  const handleChange = (e) => {
+  const customers = useLiveQuery(() => db.customers.toArray(), []);
+
+  const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setCustomer(prevState => ({
-      ...prevState,
-      [name]: value
-    }));
+    setNewCustomer(prevState => ({ ...prevState, [name]: value }));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    ws.send(JSON.stringify(customer));
-    alert('Customer data sent');
+    await db.customers.add(newCustomer);
+    setNewCustomer({ firstName: '', lastName: '', email: '' }); // Reset form
+  };
+
+  const handleDelete = async (id) => {
+    await db.customers.delete(id);
   };
 
   return (
-    <div className="App">
-      <header className="App-header">
-        <form onSubmit={handleSubmit}>
-          <input
-            type="text"
-            name="firstName"
-            value={customer.firstName}
-            onChange={handleChange}
-            placeholder="First Name"
-            required
-          />
-          <input
-            type="text"
-            name="lastName"
-            value={customer.lastName}
-            onChange={handleChange}
-            placeholder="Last Name"
-            required
-          />
-          <input
-            type="email"
-            name="email"
-            value={customer.email}
-            onChange={handleChange}
-            placeholder="Email"
-            required
-          />
-          <button type="submit">Send Customer Data</button>
-        </form>
-      </header>
+    <div>
+      <h2>Customers</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>First Name</th>
+            <th>Last Name</th>
+            <th>Email</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {customers && customers.map(customer => (
+            <tr key={customer.id}>
+              <td>{customer.firstName}</td>
+              <td>{customer.lastName}</td>
+              <td>{customer.email}</td>
+              <td><button onClick={() => handleDelete(customer.id)}>Delete</button></td>
+            </tr>
+          ))}
+          <tr>
+            <td><input name="firstName" value={newCustomer.firstName} onChange={handleInputChange} /></td>
+            <td><input name="lastName" value={newCustomer.lastName} onChange={handleInputChange} /></td>
+            <td><input name="email" value={newCustomer.email} onChange={handleInputChange} /></td>
+            <td><button onClick={handleSubmit}>Add Customer</button></td>
+          </tr>
+        </tbody>
+      </table>
     </div>
   );
 }
 
-export default App;
+export default CustomerDataComponent;
