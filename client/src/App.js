@@ -25,6 +25,7 @@ function CustomerDataComponent() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    console.log('newCustomer:', newCustomer);
     await db.customers.add(newCustomer);
     setNewCustomer({ firstName: '', lastName: '', email: '' }); // Reset form
   };
