@@ -1,8 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import Dexie from 'dexie';
 import { useLiveQuery } from 'dexie-react-hooks';
+import { useDropzone } from 'react-dropzone';
 import './WebSocketSyncProtocol';
 import { db } from './db';
+
+// Assuming your Web Worker script is named "worker.js" and located in the public folder
+const worker = new Worker('worker.js');
 
 db.syncable.connect('websocket', 'ws://localhost:8080');
 db.syncable.on('statusChanged', (newStatus, url) => {
@@ -17,6 +21,18 @@ function CustomerDataComponent() {
   });
 
   const customers = useLiveQuery(() => db.customers.toArray(), []);
+
+  const onDrop = useCallback(acceptedFiles => {
+    // Assuming only one file is accepted and processed
+    const file = acceptedFiles[0];
+    console.log('File accepted:', file);
+
+    // Send file to web worker for processing
+    worker.postMessage({ file });
+
+  }, []);
+
+  const { getRootProps, getInputProps } = useDropzone({ onDrop });
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -36,6 +52,10 @@ function CustomerDataComponent() {
 
   return (
     <div>
+      <div {...getRootProps()} style={{ border: '2px dashed #007bff', padding: '20px', marginBottom: '20px' }}>
+        <input {...getInputProps()} />
+        <p>Drag 'n' drop a file here, or click to select a file</p>
+      </div>
       <h2>Customers</h2>
       <table>
         <thead>
@@ -55,12 +75,6 @@ function CustomerDataComponent() {
               <td><button onClick={() => handleDelete(customer.id)}>Delete</button></td>
             </tr>
           ))}
-          <tr>
-            <td><input name="firstName" value={newCustomer.firstName} onChange={handleInputChange} /></td>
-            <td><input name="lastName" value={newCustomer.lastName} onChange={handleInputChange} /></td>
-            <td><input name="email" value={newCustomer.email} onChange={handleInputChange} /></td>
-            <td><button onClick={handleSubmit}>Add Customer</button></td>
-          </tr>
         </tbody>
       </table>
     </div>
