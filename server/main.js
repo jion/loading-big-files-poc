@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const SyncServer = require('./WebSocketSyncServer');
 const PORT = 8080; // Ensure this port matches your Docker and WebSocket client setup
 
-mongoose.connect('mongodb://mongo:27017/myDexieApp', { useNewUrlParser: true, useUnifiedTopology: true });
+mongoose.connect(process.env.MONGO_URL, { useNewUrlParser: true, useUnifiedTopology: true });
 mongoose.connection
   .once('open', () => {
     console.log('Connected to MongoDB');
