@@ -7,7 +7,7 @@ import {
     OnChangesAcceptedFunction,
     OnSuccessFunction,
     OnErrorFunction,
-  } from './Interfaces';
+  } from '../src/Interfaces';
 
   export class WebSocketSyncProtocol {
     private requestId: number = 0;
