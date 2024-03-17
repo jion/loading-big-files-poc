@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Dexie from 'dexie';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useDropzone } from 'react-dropzone';
@@ -23,13 +23,34 @@ function CustomerDataComponent() {
   const customers = useLiveQuery(() => db.customers.toArray(), []);
 
   const onDrop = useCallback(acceptedFiles => {
-    // Assuming only one file is accepted and processed
-    const file = acceptedFiles[0];
-    console.log('File accepted:', file);
-
     // Send file to web worker for processing
+    const file = acceptedFiles[0];
     worker.postMessage({ file });
+  }, []);
 
+  useEffect(() => {
+    // Listen for messages from the worker
+    const handleMessage = (event) => {
+      const { customer, error } = event.data;
+      if (error) {
+        console.error('Error from worker:', error);
+        return;
+      }
+
+      if (customer) {
+        console.log('Adding customer from worker:', customer);
+        db.customers.add(customer).catch(error => {
+          console.error('Error adding customer to Dexie:', error);
+        });
+      }
+    };
+
+    worker.addEventListener('message', handleMessage);
+
+    // Cleanup
+    return () => {
+      worker.removeEventListener('message', handleMessage);
+    };
   }, []);
 
   const { getRootProps, getInputProps } = useDropzone({ onDrop });
@@ -60,6 +81,7 @@ function CustomerDataComponent() {
       <table>
         <thead>
           <tr>
+            <th>ID</th>
             <th>First Name</th>
             <th>Last Name</th>
             <th>Email</th>
@@ -69,8 +91,9 @@ function CustomerDataComponent() {
         <tbody>
           {customers && customers.map(customer => (
             <tr key={customer.id}>
-              <td>{customer.firstName}</td>
-              <td>{customer.lastName}</td>
+              <td>{customer.merchant_user_id}</td>
+              <td>{customer.first_name}</td>
+              <td>{customer.last_name}</td>
               <td>{customer.email}</td>
               <td><button onClick={() => handleDelete(customer.id)}>Delete</button></td>
             </tr>
