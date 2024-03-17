@@ -16,17 +16,25 @@ class WebSocketSyncProtocol {
         // Additional initialization can be performed here
       };
 
+      // Error and close handlers
+      this.reconnectDelay = options.reconnectDelay || 5000; // Reconnect delay in milliseconds
+      this.shouldReconnect = true; // Flag to control reconnection attempts
+
       this.ws.onerror = (event) => {
         console.error("WebSocket encountered an error: ", event.message);
-        // Implement reconnect logic or error handling here
+        this.isConnected = false;
+        // No immediate reconnection here, `onclose` will handle it
       };
 
       this.ws.onclose = (event) => {
         console.log("WebSocket connection closed.");
         this.isConnected = false;
-        // Cleanup or reconnect logic can go here
+        if (this.shouldReconnect) {
+          setTimeout(() => this.connect(), this.reconnectDelay);
+        }
       };
 
+      // Handle messages from the server
       this.ws.onmessage = (event) => {
         const message = JSON.parse(event.data);
 
@@ -54,6 +62,7 @@ class WebSocketSyncProtocol {
     }
 
     disconnect() {
+      this.shouldReconnect = false; // Prevent reconnection attempts
       if (this.ws) {
         this.ws.close();
         this.ws = null;
