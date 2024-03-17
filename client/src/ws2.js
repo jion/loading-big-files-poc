@@ -28,7 +28,28 @@ class WebSocketSyncProtocol {
       };
 
       this.ws.onmessage = (event) => {
-        // Message handling logic will be implemented in future iterations
+        const message = JSON.parse(event.data);
+
+        switch (message.type) {
+          case 'changes':
+            this.applyRemoteChanges(message.changes, message.lastRevision, message.partial);
+            break;
+          case 'ack':
+            if (this.acceptCallbacks[message.requestId]) {
+              this.acceptCallbacks[message.requestId]();
+              delete this.acceptCallbacks[message.requestId];
+            }
+            break;
+          case 'clientIdentity':
+            // Handle client identity setup or update
+            break;
+          case 'error':
+            console.error("Error from server: ", message.message);
+            // Implement additional error handling here
+            break;
+          default:
+            console.log("Received unknown message type from server.");
+        }
       };
     }
 
@@ -57,6 +78,12 @@ class WebSocketSyncProtocol {
 
       this.ws.send(JSON.stringify(message));
     }
+
+    applyRemoteChanges(changes, lastRevision, partial) {
+      console.log("Applying remote changes: ", changes);
+      // Implement the logic to apply changes to the local database or state
+    }
+
   }
 
   export default WebSocketSyncProtocol;
