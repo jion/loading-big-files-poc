@@ -22,85 +22,6 @@ var CREATE = 1,
     UPDATE = 2,
     DELETE = 3;
 
-
-function newMemoryDB() {
-    return {
-        tables: {},  // Tables: Each key is a table and its value is another object where each key is the primary key and value is the record / object that is stored in ram.
-        changes: [], // Special table that records all changes made to the db. In this simple sample, we let it grow infinitly. In real world, we would have had a regular cleanup of old changes.
-        uncommittedChanges: {}, // Map<clientID,Array<change>> Changes where partial=true buffered for being committed later on.
-        revision: 0, // Current revision of the database.
-        subscribers: [], // Subscribers to when database got changes. Used by server connections to be able to push out changes to their clients as they occur.
-
-        create: function (table, key, obj, clientIdentity) {
-            // Create table if it doesnt exist:
-            db.tables[table] = db.tables[table] || {};
-            // Put the obj into to table
-            db.tables[table][key] = obj;
-            // Register the change:
-            db.changes.push({
-                rev: ++db.revision,
-                source: clientIdentity,
-                type: CREATE,
-                table: table,
-                key: key,
-                obj: obj
-            });
-            db.trigger();
-        },
-        update: function (table, key, modifications, clientIdentity) {
-            if (db.tables[table]) {
-                var obj = db.tables[table][key];
-                if (obj) {
-                    applyModifications(obj, modifications);
-                    db.changes.push({
-                        rev: ++db.revision,
-                        source: clientIdentity,
-                        type: UPDATE,
-                        table: table,
-                        key: key,
-                        mods: modifications
-                    });
-                    db.trigger();
-                }
-            }
-        },
-        'delete': function (table, key, clientIdentity) {
-            if (db.tables[table]) {
-                if (db.tables[table][key]) {
-                    delete db.tables[table][key];
-                    db.changes.push({
-                        rev: ++db.revision,
-                        source: clientIdentity,
-                        type: DELETE,
-                        table: table,
-                        key: key,
-                    });
-                    db.trigger();
-                }
-            }
-        },
-        trigger: function () {
-            if (!db.trigger.delayedHandle) {
-                // Delay the trigger so that it's only called once per bunch of changes instead of being called for each single change.
-                db.trigger.delayedHandle = setTimeout(function () {
-                    delete db.trigger.delayedHandle;
-                    db.subscribers.forEach(function (subscriber) {
-                        try { subscriber(); } catch (e) { }
-                    });
-                }, 0);
-            }
-        },
-        subscribe: function (fn) {
-            db.subscribers.push(fn);
-        },
-        unsubscribe: function (fn) {
-            db.subscribers.splice(db.subscribers.indexOf(fn), 1);
-        }
-    }
-}
-
-
-
 function SyncServer(port) {
     // This sample sync server works against a RAM database - an object of tables + an array of changes to the database
 
@@ -122,24 +43,37 @@ function SyncServer(port) {
 
         async create(table, key, obj, clientIdentity) {
             if (table === 'customers') {
-                const customer = new Customer(obj);
-                await customer.save();
+              // Assuming `id` is part of `obj` and is the same as Dexie's `id`
+              const query = { id: key }; // Match document by Dexie's `id`
+              const update = { ...obj, id: key }; // Include `id` in the document
+              const options = { upsert: true, new: true, setDefaultsOnInsert: true };
 
+              Customer.findOneAndUpdate(query, update, options, async (error, result) => {
+                if (error) {
+                  console.error("Error in upsert operation:", error);
+                  return;
+                }
+
+                // Assuming the change tracking is still needed
                 const change = new Change({
-                    rev: ++this.revision,
-                    source: clientIdentity,
-                    type: CREATE,
-                    table,
-                    key: customer._id, // Assuming _id is the primary key
-                    obj
+                  rev: ++this.revision,
+                  source: clientIdentity,
+                  type: CREATE,
+                  table,
+                  key: result.id, // Use `id` from the upserted/updated result
+                  obj: update
                 });
                 await change.save();
                 this.trigger();
+
+                console.log("Upsert operation successful for:", result);
+              });
             }
         },
+
         async update(table, key, modifications, clientIdentity) {
             if (table === 'customers') {
-                const customer = await Customer.findById(key);
+                const customer = await Customer.findOneAndUpdate({ id: key }, modifications, { new: true });
                 if (customer) {
                     Object.keys(modifications).forEach((modKey) => {
                         customer[modKey] = modifications[modKey];
@@ -154,6 +88,7 @@ function SyncServer(port) {
                         key,
                         mods: modifications
                     });
+                    console.log("Update Triggered! ", modifications);
                     await change.save();
                     this.trigger();
                 }
@@ -161,7 +96,7 @@ function SyncServer(port) {
         },
         async delete(table, key, clientIdentity) {
             if (table === 'customers') {
-                await Customer.findByIdAndDelete(key);
+                await Customer.findOneAndDelete({ id: key });
 
                 const change = new Change({
                     rev: ++this.revision,
@@ -170,6 +105,7 @@ function SyncServer(port) {
                     table,
                     key
                 });
+                console.log("Delete Triggered! ", key);
                 await change.save();
                 this.trigger();
             }
@@ -233,6 +169,7 @@ function SyncServer(port) {
             conn.on("text", function (message) {
                 var request = JSON.parse(message);
                 var type = request.type;
+                console.log("text received: ", request);
                 if (type == "clientIdentity") {
                     // Client Hello: Client says "Hello, My name is <clientIdentity>!" or "Hello, I'm newborn. Please give me a name!"
                     // Client identity is used for the following purpose:
@@ -321,12 +258,15 @@ function SyncServer(port) {
                                 switch (change.type) {
                                     case CREATE:
                                         db.create(change.table, change.key, change.obj, conn.clientIdentity);
+                                        console.log("Create Triggered! ", change.obj);
                                         break;
                                     case UPDATE:
                                         db.update(change.table, change.key, change.mods, conn.clientIdentity);
+                                        console.log("Update Triggered! ", change.mods);
                                         break;
                                     case DELETE:
                                         db.delete(change.table, change.key, conn.clientIdentity);
+                                        console.log("Delete Triggered! ", change.key);
                                         break;
                                 }
                             });

@@ -2,11 +2,11 @@ const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
 
 const customerSchema = new Schema({
-  firstName: String,
-  lastName: String,
-  email: String,
-  // Add other fields as necessary
-});
+    id: { type: String, required: true, unique: true }, // Use Dexie's id as the primary key
+    firstName: String,
+    lastName: String,
+    email: String,
+  });
 
 const changeSchema = new Schema({
   rev: Number,
