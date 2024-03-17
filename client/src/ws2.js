@@ -9,11 +9,13 @@ class WebSocketSyncProtocol {
 
     connect() {
       this.ws = new WebSocket(this.url);
+      this.messageQueue = []; // Initialize the message queue
 
       this.ws.onopen = (event) => {
         console.log("WebSocket connection established.");
         this.isConnected = true;
-        // Additional initialization can be performed here
+        this.flushMessageQueue(); // Flush queued messages upon reconnection
+        // Additional initialization logic...
       };
 
       // Error and close handlers
@@ -62,7 +64,16 @@ class WebSocketSyncProtocol {
     }
 
     disconnect() {
-      this.shouldReconnect = false; // Prevent reconnection attempts
+      // Check if there are pending operations that need to be completed before disconnecting
+      if (Object.keys(this.acceptCallbacks).length > 0) {
+        console.warn("Waiting for pending operations to complete before disconnecting...");
+        // Implement logic to wait for operations to complete or to notify the server
+      }
+
+      // Prevent further reconnection attempts
+      this.shouldReconnect = false;
+
+      // Close the WebSocket connection
       if (this.ws) {
         this.ws.close();
         this.ws = null;
@@ -71,21 +82,28 @@ class WebSocketSyncProtocol {
     }
 
     sendChanges(changes, baseRevision, partial) {
-      const requestId = Date.now(); // Simple example for generating a unique ID
-      this.acceptCallbacks[requestId] = () => {
-        console.log(`Changes with request ID ${requestId} accepted by server.`);
-        // Implement callback actions here
-      };
-
       const message = {
         type: 'changes',
         changes,
         partial,
         baseRevision,
-        requestId,
+        requestId: Date.now(),
       };
 
-      this.ws.send(JSON.stringify(message));
+      if (!this.isConnected) {
+        console.log("Connection is down, queuing message");
+        this.messageQueue.push(message);
+      } else {
+        this.ws.send(JSON.stringify(message));
+      }
+    }
+
+    // Add logic to flush message queue upon reconnection
+    flushMessageQueue() {
+      while (this.messageQueue.length > 0) {
+        const message = this.messageQueue.shift(); // Get the first message from the queue
+        this.ws.send(JSON.stringify(message));
+      }
     }
 
     applyRemoteChanges(changes, lastRevision, partial) {
