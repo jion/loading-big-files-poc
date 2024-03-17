@@ -11,21 +11,37 @@ class WebSocketSyncProtocol {
       this.ws = new WebSocket(this.url);
       this.messageQueue = []; // Initialize the message queue
 
-      this.ws.onopen = (event) => {
+      this.ws.onopen = () => {
         console.log("WebSocket connection established.");
         this.isConnected = true;
+        // Send clientIdentity message
+        const clientIdentityMessage = {
+          type: "clientIdentity",
+          clientIdentity: this.options.clientIdentity || null // Assuming this is stored in options or another appropriate place
+        };
+        this.ws.send(JSON.stringify(clientIdentityMessage));
+
+        // Send subscribe message
+        const subscribeMessage = {
+          type: "subscribe",
+          syncedRevision: this.options.syncedRevision || null // Likewise, assuming stored in options
+        };
+        this.ws.send(JSON.stringify(subscribeMessage));
+
         this.flushMessageQueue(); // Flush queued messages upon reconnection
-        // Additional initialization logic...
       };
 
       // Error and close handlers
       this.reconnectDelay = options.reconnectDelay || 5000; // Reconnect delay in milliseconds
       this.shouldReconnect = true; // Flag to control reconnection attempts
 
-      this.ws.onerror = (event) => {
-        console.error("WebSocket encountered an error: ", event.message);
-        this.isConnected = false;
-        // No immediate reconnection here, `onclose` will handle it
+      this.onError = (errorMessage, retryDelay) => {
+        console.error(`Error encountered: ${errorMessage}. Retry in ${retryDelay}ms`);
+        if (retryDelay === Infinity) {
+          this.shouldReconnect = false; // Do not attempt to reconnect for non-recoverable errors
+        } else {
+          setTimeout(() => this.connect(), retryDelay);
+        }
       };
 
       this.ws.onclose = (event) => {
@@ -36,29 +52,42 @@ class WebSocketSyncProtocol {
         }
       };
 
+      this.onSuccess = (reactFunction, disconnectFunction) => {
+        console.log("Sync successful. Ready for application use.");
+        // Expose functions for reacting to changes and disconnecting
+        this.react = reactFunction;
+        this.disconnectOverride = disconnectFunction;
+      };
+
       // Handle messages from the server
       this.ws.onmessage = (event) => {
         const message = JSON.parse(event.data);
 
         switch (message.type) {
-          case 'changes':
-            this.applyRemoteChanges(message.changes, message.lastRevision, message.partial);
+          case "clientIdentity":
+            this.options.clientIdentity = message.clientIdentity;
+            console.log("Received new clientIdentity:", message.clientIdentity);
+            // Potentially save the clientIdentity for future sessions
             break;
-          case 'ack':
+          case "ack":
             if (this.acceptCallbacks[message.requestId]) {
               this.acceptCallbacks[message.requestId]();
               delete this.acceptCallbacks[message.requestId];
             }
             break;
-          case 'clientIdentity':
-            // Handle client identity setup or update
+          case "error":
+            this.onError(message.message, Infinity); // Handle as a non-recoverable error
             break;
-          case 'error':
-            console.error("Error from server: ", message.message);
-            // Implement additional error handling here
+          case "changes":
+            // Assuming applyRemoteChanges is implemented to handle this
+            this.applyRemoteChanges(message.changes, message.lastRevision, message.partial);
+            if (!message.partial) {
+              // First complete sync
+              this.onSuccess(() => {/* react function */}, () => this.disconnect());
+            }
             break;
           default:
-            console.log("Received unknown message type from server.");
+            console.warn("Received unknown message type:", message.type);
         }
       };
     }
@@ -107,8 +136,9 @@ class WebSocketSyncProtocol {
     }
 
     applyRemoteChanges(changes, lastRevision, partial) {
-      console.log("Applying remote changes: ", changes);
-      // Implement the logic to apply changes to the local database or state
+      // Here you would apply the changes to your application's data store
+      console.log("Applying remote changes:", changes);
+      // For example, updating the state in a React component or a global state management library
     }
 
   }
