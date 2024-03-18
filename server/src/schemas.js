@@ -3,9 +3,12 @@ const Schema = mongoose.Schema;
 
 const customerSchema = new Schema({
     id: { type: String, required: true, unique: true }, // Use Dexie's id as the primary key
-    firstName: String,
-    lastName: String,
+    merchant_user_id: String,
+    merchant: String,
+    first_name: String,
+    last_name: String,
     email: String,
+    live: Boolean,
   });
 
 const changeSchema = new Schema({

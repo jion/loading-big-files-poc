@@ -48,27 +48,23 @@ function SyncServer(port) {
               const update = { ...obj, id: key }; // Include `id` in the document
               const options = { upsert: true, new: true, setDefaultsOnInsert: true };
 
-              Customer.findOneAndUpdate(query, update, options, async (error, result) => {
-                if (error) {
-                  console.error("Error in upsert operation:", error);
-                  return;
-                }
-
+              const customer = await Customer.findOneAndUpdate(query, update, options);
+              if (customer) {
                 // Assuming the change tracking is still needed
                 const change = new Change({
-                  rev: ++this.revision,
-                  source: clientIdentity,
-                  type: CREATE,
-                  table,
-                  key: result.id, // Use `id` from the upserted/updated result
-                  obj: update
+                    rev: ++this.revision,
+                    source: clientIdentity,
+                    type: CREATE,
+                    table,
+                    key: customer.id, // Use `id` from the upserted/updated result
+                    obj: update
                 });
                 await change.save();
                 this.trigger();
 
-                console.log("Upsert operation successful for:", result);
-              });
+                console.log("Upsert operation successful for:", customer);
             }
+          }
         },
 
         async update(table, key, modifications, clientIdentity) {
@@ -143,6 +139,10 @@ function SyncServer(port) {
 
     this.start = function () {
         ws.createServer(function (conn) {
+
+            console.log("New connection");
+            console.log("Client identity: ", conn.clientIdentity);
+            console.log('-----------------------------------')
 
             var syncedRevision = 0; // Used when sending changes to client. Only send changes above syncedRevision since client is already in sync with syncedRevision.
 

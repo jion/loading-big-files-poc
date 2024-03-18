@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useDropzone } from 'react-dropzone';
 import Dexie from 'dexie';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useDropzone } from 'react-dropzone';
 import './WebSocketSyncProtocol';
 import { db } from './db';
 
