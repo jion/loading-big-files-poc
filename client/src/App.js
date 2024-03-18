@@ -1,62 +1,85 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
-import Dexie from 'dexie';
-import { useLiveQuery } from 'dexie-react-hooks';
-import './WebSocketSyncProtocol';
-import { db } from './db';
+// import Dexie from 'dexie';
+// import { useLiveQuery } from 'dexie-react-hooks';
+// import './WebSocketSyncProtocol';
+// import { db } from './db';
 
-db.syncable.connect('websocket', 'ws://localhost:8080');
-db.syncable.on('statusChanged', (newStatus, url) => {
-  console.log(`Sync Status: ${Dexie.Syncable.StatusTexts[newStatus]}`);
-});
+// db.syncable.connect('websocket', 'ws://localhost:8080');
+// db.syncable.on('statusChanged', (newStatus, url) => {
+//   console.log(`Sync Status: ${Dexie.Syncable.StatusTexts[newStatus]}`);
+// });
 
 function CustomerDataComponent() {
   // Summary -------------------------------------------------------------------
-  const customers = useLiveQuery(() => db.customers.toArray(), []);
+  const customers = [] // = useLiveQuery(() => db.customers.toArray(), []);
 
-  const handleDelete = async (id) => {
-    await db.customers.delete(id);
-  };
+  // const handleDelete = async (id) => {
+  //   await db.customers.delete(id);
+  // };
 
   // Worker --------------------------------------------------------------------
-  const [worker, setWorker] = useState();
+  const [dbWorker, setDbWorker] = useState();
+  const [fileWorker, setFileWorker] = useState();
+
+  const [uploadStartTime, setUploadStartTime] = useState();
+  const [uploadEndTime, setUploadEndTime] = useState();
+  const [totalElapsedTime, setTotalElapsedTime] = useState();
+
 
   useEffect(() => {
-    // Initialize the web worker
-    const worker = new Worker(new URL('workers/dexie_upload.worker.js', import.meta.url), { type: 'module' });
-    console.log('Worker created:', worker);
-    setWorker(worker);
+    const dbWorker = new Worker(new URL('workers/DexieDB.worker.js', import.meta.url), { type: 'module' });
+    setDbWorker(dbWorker);
 
-    // Listen for messages from the worker
-    const handleMessage = (event) => {
-      const { customer, error } = event.data;
-      if (error) {
-        console.error('Error from worker:', error);
-        return;
+    const handleDbWorkerMessage = event => {
+      const { from, action, timestamp } = event.data;
+      if (from === "dexie_db" && action === "finished_uploading") {
+        setUploadEndTime(timestamp);
       }
+    };
 
-      if (customer) {
-        console.log('Adding customer from worker:', customer);
-        db.customers.add(customer).catch(error => {
-          console.error('Error adding customer to Dexie:', error);
+    dbWorker.addEventListener('message', handleDbWorkerMessage);
+  }, []);
+
+  useEffect(() => {
+    if (!uploadEndTime || !uploadStartTime || (uploadEndTime < uploadStartTime)) return;
+    setTotalElapsedTime(uploadEndTime - uploadStartTime);
+  }, [uploadEndTime, uploadStartTime]);
+
+  useEffect(() => {
+    if (!dbWorker) return;
+    const fileWorker = new Worker(new URL('workers/FileProcessor.worker.js', import.meta.url), { type: 'module' });
+    setFileWorker(fileWorker);
+
+    const handleFileWorkerMessage = event => {
+      const { action, from, file_name, data, partial } = event.data;
+      if (from === "file_processor" && action === "upsert_data_in_bulk") {
+        dbWorker.postMessage({
+          action: "upsert_data_in_bulk",
+          data,
+          partial,
         });
       }
-    };
+    }
 
-    worker.addEventListener('message', handleMessage);
-
-    // Cleanup
-    return () => {
-      worker.removeEventListener('message', handleMessage);
-    };
-  }, []);
+    fileWorker.addEventListener('message', handleFileWorkerMessage);
+  }, [dbWorker]);
 
   // Dropzone ------------------------------------------------------------------
   const onDrop = useCallback(acceptedFiles => {
+    // Record start time
+    setTotalElapsedTime(null);
+    setUploadStartTime(Date.now())
+    setUploadEndTime(null);
+
     // Send file to web worker for processing
     const file = acceptedFiles[0];
-    worker.postMessage({ file });
-  }, [worker]);
+    fileWorker.postMessage({
+      action: 'load_file',
+      file,
+      file_name: file.name,
+    });
+  }, [fileWorker]);
 
   const { getRootProps, getInputProps } = useDropzone({ onDrop });
 
@@ -67,6 +90,13 @@ function CustomerDataComponent() {
         <input {...getInputProps()} />
         <p>Drag 'n' drop a file here, or click to select a file</p>
       </div>
+      {/* Display timestamps and elapsed time */}
+      <div>
+        {uploadStartTime && <p>Upload Start: {new Date(uploadStartTime).toLocaleString()}</p>}
+        {uploadEndTime && <p>Dexie Loaded: {new Date(uploadEndTime).toLocaleString()}</p>}
+        {totalElapsedTime && <p>Total Time Elapsed: {totalElapsedTime / 1000} seconds</p>}
+      </div>
+      {/* Display customers */}
       <h2>Customers</h2>
       <table>
         <thead>
@@ -85,7 +115,7 @@ function CustomerDataComponent() {
               <td>{customer.first_name}</td>
               <td>{customer.last_name}</td>
               <td>{customer.email}</td>
-              <td><button onClick={() => handleDelete(customer.id)}>Delete</button></td>
+              {/* <td><button onClick={() => handleDelete(customer.id)}>Delete</button></td> */}
             </tr>
           ))}
         </tbody>
