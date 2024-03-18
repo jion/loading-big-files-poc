@@ -1,5 +1,5 @@
 // FileProcessorWorker.ts
-const CHUNKS_SIZE = 100; // Adjust based on your needs
+const DEFAULT_CHUNK_SIZE = 100; // Adjust based on your needs
 
 // interface LoadFileMessage {
 //   action: "load_file";
@@ -14,8 +14,9 @@ const CHUNKS_SIZE = 100; // Adjust based on your needs
 //   partial: boolean;
 // }
 
-async function processStream(file, fileName) {
+async function processStream(file, fileName, chunkSizeValue) {
   const reader = file.stream().getReader();
+  const chunkSize = chunkSizeValue || DEFAULT_CHUNK_SIZE;
   let decoder = new TextDecoder("utf-8");
   let chunkAccumulator = [];
   let incompleteLine = '';
@@ -23,7 +24,7 @@ async function processStream(file, fileName) {
   try {
     while (true) {
       const { done, value } = await reader.read();
-      console.log("[FileProcessor] Read chunk from file:", value, "Done:", done);
+      // console.log("[FileProcessor] Read chunk from file:", value, "Done:", done);
       if (done) break;
 
       // Decode binary data to text, including any incomplete line from the previous chunk
@@ -38,8 +39,8 @@ async function processStream(file, fileName) {
             const {origin, ...obj} = JSON.parse(line);
             chunkAccumulator.push(obj);
 
-            if (chunkAccumulator.length >= CHUNKS_SIZE) {
-              console.log("[FileProcessor] Sending chunk of data to Dexie:", chunkAccumulator);
+            if (chunkAccumulator.length >= chunkSize) {
+              // console.log("[FileProcessor] Sending chunk of data to Dexie:", chunkAccumulator);
               postMessage({
                 from: "file_processor",
                 action: "upsert_data_in_bulk",
@@ -68,7 +69,7 @@ async function processStream(file, fileName) {
 
     // Send any remaining data as the final chunk
     if (chunkAccumulator.length > 0) {
-      console.log("[FileProcessor] Sending last chunk of data to Dexie:", chunkAccumulator);
+      // console.log("[FileProcessor] Sending last chunk of data to Dexie:", chunkAccumulator);
       postMessage({
         from: "file_processor",
         action: "upsert_data_in_bulk",
@@ -90,7 +91,7 @@ onmessage = async function(event) {
 
     if (message.action === "load_file") {
       console.log("[FileProcessor] Received file to process:", message.file_name);
-      await processStream(message.file, message.file_name);
+      await processStream(message.file, message.file_name, message.chunkSize);
       console.log("[FileProcessor] Finished processing file:", message.file_name);
     }
   } catch (error) {

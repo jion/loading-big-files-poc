@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
-// import Dexie from 'dexie';
-// import { useLiveQuery } from 'dexie-react-hooks';
+import Dexie from 'dexie';
+import { useLiveQuery } from 'dexie-react-hooks';
 // import './WebSocketSyncProtocol';
-// import { db } from './db';
+import { db } from './db';
 
 // db.syncable.connect('websocket', 'ws://localhost:8080');
 // db.syncable.on('statusChanged', (newStatus, url) => {
@@ -12,11 +12,15 @@ import { useDropzone } from 'react-dropzone';
 
 function CustomerDataComponent() {
   // Summary -------------------------------------------------------------------
-  const customers = [] // = useLiveQuery(() => db.customers.toArray(), []);
+  // dexie query, last 10 customers
+  const customers = useLiveQuery(() => db.customers.orderBy('id').reverse().limit(10).toArray());
 
-  // const handleDelete = async (id) => {
-  //   await db.customers.delete(id);
-  // };
+  const handleDelete = async (id) => {
+    await db.customers.delete(id);
+  };
+  const handleClear = async () => {
+    await db.customers.clear();
+  }
 
   // Worker --------------------------------------------------------------------
   const [dbWorker, setDbWorker] = useState();
@@ -25,6 +29,8 @@ function CustomerDataComponent() {
   const [uploadStartTime, setUploadStartTime] = useState();
   const [uploadEndTime, setUploadEndTime] = useState();
   const [totalElapsedTime, setTotalElapsedTime] = useState();
+
+  const [chunkSize, setChunkSize] = useState(1000);
 
 
   useEffect(() => {
@@ -67,6 +73,7 @@ function CustomerDataComponent() {
 
   // Dropzone ------------------------------------------------------------------
   const onDrop = useCallback(acceptedFiles => {
+    if(!fileWorker) return;
     // Record start time
     setTotalElapsedTime(null);
     setUploadStartTime(Date.now())
@@ -78,8 +85,9 @@ function CustomerDataComponent() {
       action: 'load_file',
       file,
       file_name: file.name,
+      chunkSize,
     });
-  }, [fileWorker]);
+  }, [fileWorker, chunkSize]);
 
   const { getRootProps, getInputProps } = useDropzone({ onDrop });
 
@@ -96,8 +104,15 @@ function CustomerDataComponent() {
         {uploadEndTime && <p>Dexie Loaded: {new Date(uploadEndTime).toLocaleString()}</p>}
         {totalElapsedTime && <p>Total Time Elapsed: {totalElapsedTime / 1000} seconds</p>}
       </div>
+      {/* Component to adjust chunksize */}
+      <div>
+        <label>Chunk Size: </label>
+        <input type="number" value={chunkSize} onChange={(e) => setChunkSize(e.target.value)} />
+      </div>
       {/* Display customers */}
       <h2>Customers</h2>
+      <p>Showing last 10 customers</p>
+      <button onClick={() => handleClear()}>Reset Table</button>
       <table>
         <thead>
           <tr>
@@ -115,7 +130,7 @@ function CustomerDataComponent() {
               <td>{customer.first_name}</td>
               <td>{customer.last_name}</td>
               <td>{customer.email}</td>
-              {/* <td><button onClick={() => handleDelete(customer.id)}>Delete</button></td> */}
+              <td><button onClick={() => handleDelete(customer.id)}>Delete</button></td>
             </tr>
           ))}
         </tbody>
