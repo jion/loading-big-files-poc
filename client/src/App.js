@@ -2,13 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
 import Dexie from 'dexie';
 import { useLiveQuery } from 'dexie-react-hooks';
-// import './WebSocketSyncProtocol';
 import { db } from './db';
-
-// db.syncable.connect('websocket', 'ws://localhost:8080');
-// db.syncable.on('statusChanged', (newStatus, url) => {
-//   console.log(`Sync Status: ${Dexie.Syncable.StatusTexts[newStatus]}`);
-// });
 
 function CustomerDataComponent() {
   // Summary -------------------------------------------------------------------

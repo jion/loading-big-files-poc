@@ -16,6 +16,7 @@
 
 const ws = require("nodejs-websocket"); // This will work also in browser if "websocketserver-shim.js" is included.
 const { Customer, Change } = require('./schemas'); // Adjust the path as necessary
+const MongoDBImplementation = require('./dixieMongoDB');
 
 // CREATE / UPDATE / DELETE constants:
 var CREATE = 1,
@@ -34,96 +35,7 @@ function SyncServer(port) {
     //
     //
     // ----------------------------------------------------------------------------
-    var db = {
-        tables: {},  // Tables: Each key is a table and its value is another object where each key is the primary key and value is the record / object that is stored in ram.
-        changes: [], // Special table that records all changes made to the db. In this simple sample, we let it grow infinitly. In real world, we would have had a regular cleanup of old changes.
-        uncommittedChanges: {}, // Map<clientID,Array<change>> Changes where partial=true buffered for being committed later on.
-        revision: 0, // Current revision of the database.
-        subscribers: [], // Subscribers to when database got changes. Used by server connections to be able to push out changes to their clients as they occur.
-
-        async create(table, key, obj, clientIdentity) {
-            if (table === 'customers') {
-              // Assuming `id` is part of `obj` and is the same as Dexie's `id`
-              const query = { id: key }; // Match document by Dexie's `id`
-              const update = { ...obj, id: key }; // Include `id` in the document
-              const options = { upsert: true, new: true, setDefaultsOnInsert: true };
-
-              const customer = await Customer.findOneAndUpdate(query, update, options);
-              if (customer) {
-                // Assuming the change tracking is still needed
-                const change = new Change({
-                    rev: ++this.revision,
-                    source: clientIdentity,
-                    type: CREATE,
-                    table,
-                    key: customer.id, // Use `id` from the upserted/updated result
-                    obj: update
-                });
-                await change.save();
-                this.trigger();
-
-                console.log("Upsert operation successful for:", customer);
-            }
-          }
-        },
-
-        async update(table, key, modifications, clientIdentity) {
-            if (table === 'customers') {
-                const customer = await Customer.findOneAndUpdate({ id: key }, modifications, { new: true });
-                if (customer) {
-                    Object.keys(modifications).forEach((modKey) => {
-                        customer[modKey] = modifications[modKey];
-                    });
-                    await customer.save();
-
-                    const change = new Change({
-                        rev: ++this.revision,
-                        source: clientIdentity,
-                        type: UPDATE,
-                        table,
-                        key,
-                        mods: modifications
-                    });
-                    console.log("Update Triggered! ", modifications);
-                    await change.save();
-                    this.trigger();
-                }
-            }
-        },
-        async delete(table, key, clientIdentity) {
-            if (table === 'customers') {
-                await Customer.findOneAndDelete({ id: key });
-
-                const change = new Change({
-                    rev: ++this.revision,
-                    source: clientIdentity,
-                    type: DELETE,
-                    table,
-                    key
-                });
-                console.log("Delete Triggered! ", key);
-                await change.save();
-                this.trigger();
-            }
-        },
-        trigger: function () {
-            if (!db.trigger.delayedHandle) {
-                // Delay the trigger so that it's only called once per bunch of changes instead of being called for each single change.
-                db.trigger.delayedHandle = setTimeout(function () {
-                    delete db.trigger.delayedHandle;
-                    db.subscribers.forEach(function (subscriber) {
-                        try { subscriber(); } catch (e) { }
-                    });
-                }, 0);
-            }
-        },
-        subscribe: function (fn) {
-            db.subscribers.push(fn);
-        },
-        unsubscribe: function (fn) {
-            db.subscribers.splice(db.subscribers.indexOf(fn), 1);
-        }
-    }
+    var db = new MongoDBImplementation();
 
     // ----------------------------------------------------------------------------
     //
@@ -146,9 +58,10 @@ function SyncServer(port) {
 
             var syncedRevision = 0; // Used when sending changes to client. Only send changes above syncedRevision since client is already in sync with syncedRevision.
 
-            function sendAnyChanges() {
+            async function sendAnyChanges() {
                 // Get all changes after syncedRevision that was not performed by the client we're talkin' to.
-                var changes = db.changes.filter(function (change) { return change.rev > syncedRevision && change.source !== conn.clientIdentity; });
+                var changes = await db.getChanges(syncedRevision, conn.clientIdentity) //.changes.filter(function (change) { return change.rev > syncedRevision && change.source !== conn.clientIdentity; });
+
                 // Compact changes so that multiple changes on same object is merged into a single change.
                 var reducedSet = reduceChanges(changes, conn.clientIdentity);
                 // Convert the reduced set into an array again.
@@ -166,7 +79,7 @@ function SyncServer(port) {
                 syncedRevision = currentRevision; // Make sure we only send revisions coming after this revision next time and not resend the above changes over and over.
             }
 
-            conn.on("text", function (message) {
+            conn.on("text", async function (message) {
                 var request = JSON.parse(message);
                 var type = request.type;
                 console.log("text received: ", request);
@@ -194,7 +107,7 @@ function SyncServer(port) {
                     // Client wants to subscribe to server changes happened or happening after given syncedRevision
                     syncedRevision = request.syncedRevision || 0;
                     // Send any changes we have currently:
-                    sendAnyChanges();
+                    await sendAnyChanges();
                     // Start subscribing for additional changes:
                     db.subscribe(sendAnyChanges);
 
@@ -212,20 +125,23 @@ function SyncServer(port) {
                         if (request.partial) {
                             // Don't commit changes just yet. Store it in the partialChanges table so far. (In real db, uncommittedChanges would be its own table with columns: {clientID, type, table, key, obj, mods}).
                             // Get or create db.uncommittedChanges array for current client
-                            if (db.uncommittedChanges[conn.clientIdentity]) {
-                                // Concat the changes to existing change set:
-                                db.uncommittedChanges[conn.clientIdentity] = db.uncommittedChanges[conn.clientIdentity].concat(request.changes);
-                            } else {
-                                // Create the change set:
-                                db.uncommittedChanges[conn.clientIdentity] = request.changes;
-                            }
+                            await db.addPartialChanges(conn.clientIdentity, request.changes);
+                            // if (db.uncommittedChanges[conn.clientIdentity]) {
+                            //     // Concat the changes to existing change set:
+                            //     db.uncommittedChanges[conn.clientIdentity] = db.uncommittedChanges[conn.clientIdentity].concat(request.changes);
+                            // } else {
+                            //     // Create the change set:
+                            //     db.uncommittedChanges[conn.clientIdentity] = request.changes;
+                            // }
                         } else {
                             // This request is not partial. Time to commit.
                             // But first, check if we have previous changes from that client in uncommittedChanges because now is the time to commit them too.
-                            if (db.uncommittedChanges[conn.clientIdentity]) {
-                                request.changes = db.uncommittedChanges[conn.clientIdentity].concat(request.changes);
-                                delete db.uncommittedChanges[conn.clientIdentity];
-                            }
+                            // if (db.uncommittedChanges[conn.clientIdentity]) {
+                            //     request.changes = db.uncommittedChanges[conn.clientIdentity].concat(request.changes);
+                            //     delete db.uncommittedChanges[conn.clientIdentity];
+                            // }
+                            await db.addPartialChanges(conn.clientIdentity, request.changes);
+                            await db.commitChanges(conn.clientIdentity);
 
                             // ----------------------------------------------
                             //
@@ -249,23 +165,23 @@ function SyncServer(port) {
                             //
                             // ----------------------------------------------
                             var baseRevision = request.baseRevision || 0;
-                            var serverChanges = db.changes.filter(function (change) { return change.rev > baseRevision });
+                            var serverChanges = await db.getChanges(baseRevision) //.changes.filter(function (change) { return change.rev > baseRevision });
                             var reducedServerChangeSet = reduceChanges(serverChanges);
                             var resolved = resolveConflicts(request.changes, reducedServerChangeSet);
 
                             // Now apply the resolved changes:
-                            resolved.forEach(function (change) {
+                            resolved.forEach(async function (change) {
                                 switch (change.type) {
                                     case CREATE:
-                                        db.create(change.table, change.key, change.obj, conn.clientIdentity);
+                                        await db.create(change.table, change.key, change.obj, conn.clientIdentity);
                                         console.log("Create Triggered! ", change.obj);
                                         break;
                                     case UPDATE:
-                                        db.update(change.table, change.key, change.mods, conn.clientIdentity);
+                                        await db.update(change.table, change.key, change.mods, conn.clientIdentity);
                                         console.log("Update Triggered! ", change.mods);
                                         break;
                                     case DELETE:
-                                        db.delete(change.table, change.key, conn.clientIdentity);
+                                        await db.delete(change.table, change.key, conn.clientIdentity);
                                         console.log("Delete Triggered! ", change.key);
                                         break;
                                 }
@@ -279,6 +195,7 @@ function SyncServer(port) {
                             requestId: requestId,
                         }));
                     } catch (e) {
+                        console.log(e)
                         conn.sendText(JSON.stringify({
                             type: "error",
                             requestId: requestId,
@@ -299,6 +216,8 @@ function SyncServer(port) {
 }
 
 function reduceChanges(changes) {
+    console.log("Changes to send: ", changes);
+    console.log("Type of changes: ", typeof changes);
     // Converts an Array of change objects to a set of change objects based on its unique combination of (table ":" key).
     // If several changes were applied to the same object, the resulting set will only contain one change for that object.
     return changes.reduce(function (set, nextChange) {

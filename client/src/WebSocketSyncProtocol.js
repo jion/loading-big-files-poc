@@ -45,7 +45,6 @@ function setupWebSocketSyncProtocol() {
         //  In real world, you would have to pre-process the changes array to fit the server specification.
         //  However, this example shows how to deal with the WebSocket to fullfill the API.
 
-        console.log("Sending changes to server: ", changes);
         ws.send(JSON.stringify({
           type: 'changes',
           changes: changes,
@@ -145,4 +144,4 @@ function setupWebSocketSyncProtocol() {
   });
 }
 
-setupWebSocketSyncProtocol();
+export default setupWebSocketSyncProtocol;

@@ -1,6 +1,11 @@
 import Dexie from 'dexie';
-// import '../WebSocketSyncProtocol';
 import { db } from '../db';
+
+
+db.syncable.connect('websocket', 'ws://localhost:8080');
+db.syncable.on('statusChanged', (newStatus, url) => {
+  console.log(`Sync Status: ${Dexie.Syncable.StatusTexts[newStatus]}`);
+});
 
 async function upsertInBulk(data) {
     try {
@@ -27,11 +32,6 @@ onmessage = async function(event) {
         }
     }
 }
-
-// db.syncable.connect('websocket', 'ws://localhost:8080');
-// db.syncable.on('statusChanged', (newStatus, url) => {
-//   console.log(`Sync Status: ${Dexie.Syncable.StatusTexts[newStatus]}`);
-// });
 
 postMessage({
     action: "worker_loaded",
