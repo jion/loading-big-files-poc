@@ -15,7 +15,7 @@
  */
 
 const ws = require("nodejs-websocket"); // This will work also in browser if "websocketserver-shim.js" is included.
-const { MongoDBImplementation, InMemoryDBImplementation } = require('./dixieMongoDB');
+const { MongoDBImplementation, InMemoryDBImplementation } = require('./dbImplementations');
 
 // CREATE / UPDATE / DELETE constants:
 var CREATE = 1,
