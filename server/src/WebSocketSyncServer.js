@@ -15,8 +15,7 @@
  */
 
 const ws = require("nodejs-websocket"); // This will work also in browser if "websocketserver-shim.js" is included.
-const { Customer, Change } = require('./schemas'); // Adjust the path as necessary
-const MongoDBImplementation = require('./dixieMongoDB');
+const { MongoDBImplementation, InMemoryDBImplementation } = require('./dixieMongoDB');
 
 // CREATE / UPDATE / DELETE constants:
 var CREATE = 1,
@@ -35,7 +34,7 @@ function SyncServer(port) {
     //
     //
     // ----------------------------------------------------------------------------
-    var db = new MongoDBImplementation();
+    var db = new InMemoryDBImplementation();
 
     // ----------------------------------------------------------------------------
     //

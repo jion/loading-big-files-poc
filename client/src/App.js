@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
-import Dexie from 'dexie';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from './db';
 

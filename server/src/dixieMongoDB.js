@@ -155,21 +155,6 @@ class MongoDBImplementation extends DatabaseAbstraction {
     async commitChanges(clientIdentity) {
         const changes = await UncommittedChange.find({ clientID: clientIdentity });
         for (const change of changes) {
-            const {action, table, key, obj, modifications} = change;
-            switch (action) {
-                case 'create':
-                    await this.create(table, key, obj, clientIdentity);
-                    break;
-                case 'update':
-                    await this.update(table, key, modifications, clientIdentity);
-                    break;
-                case 'delete':
-                    await this.delete(table, key, clientIdentity);
-                    break;
-                default:
-                    throw new Error(`Unknown action ${action}`);
-            }
-            // Remove the processed change
             await UncommittedChange.findByIdAndDelete(change._id);
         }
     }
@@ -192,4 +177,119 @@ function getModelForTable(table) {
   }
 }
 
-module.exports = MongoDBImplementation;
+class InMemoryDBImplementation extends DatabaseAbstraction {
+    tables = {};  // Tables: Each key is a table and its value is another object where each key is the primary key and value is the record / object that is stored in ram.
+    changes = []; // Special table that records all changes made to the db. In this simple sample, we let it grow infinitly. In real world, we would have had a regular cleanup of old changes.
+    uncommittedChanges = {}; // Map<clientID,Array<change>> Changes where partial=true buffered for being committed later on.
+    revision = 0; // Current revision of the database.
+    subscribers = []; // Subscribers to when database got changes. Used by server connections to be able to push out changes to their clients as they occur.
+
+    async create(table, key, obj, clientIdentity, partial = false) {
+        if (partial) {
+            await this.addPartialChanges(clientIdentity, [{
+                action: 'create',
+                table,
+                key,
+                obj
+            }]);
+        } else {
+            // Create table if it doesnt exist:
+            this.tables[table] = this.tables[table] || {};
+            // Put the obj into to table
+            this.tables[table][key] = obj;
+            // Register the change:
+            this.changes.push({
+                rev: ++this.revision,
+                source: clientIdentity,
+                type: CREATE,
+                table: table,
+                key: key,
+                obj: obj
+            });
+            this.trigger();
+        }
+    }
+
+    async update(table, key, modifications, clientIdentity, partial = false) {
+        if (partial) {
+            await this.addPartialChanges(clientIdentity, [{
+                action: 'update',
+                table,
+                key,
+                modifications
+            }]);
+        } else {
+            if (this.tables[table]) {
+                var obj = this.tables[table][key];
+                if (obj) {
+                    applyModifications(obj, modifications);
+                    this.changes.push({
+                        rev: ++this.revision,
+                        source: clientIdentity,
+                        type: UPDATE,
+                        table: table,
+                        key: key,
+                        mods: modifications
+                    });
+                    this.trigger();
+                }
+            }
+        }
+    }
+
+    async delete(table, key, clientIdentity, partial = false) {
+        if (partial) {
+            await this.addPartialChanges(clientIdentity, [{
+                action: 'delete',
+                table,
+                key
+            }]);
+        } else {
+            if (this.tables[table]) {
+                if (this.tables[table][key]) {
+                    delete this.tables[table][key];
+                    this.changes.push({
+                        rev: ++this.revision,
+                        source: clientIdentity,
+                        type: DELETE,
+                        table: table,
+                        key: key,
+                    });
+                    this.trigger();
+                }
+            }
+        }
+    }
+
+    async addPartialChanges(clientIdentity, changes) {
+        if (this.uncommittedChanges[clientIdentity]) {
+            // Concat the changes to existing change set:
+            this.uncommittedChanges[clientIdentity] = this.uncommittedChanges[clientIdentity].concat(changes);
+        } else {
+            // Create the change set:
+            this.uncommittedChanges[clientIdentity] = changes;
+        }
+    }
+
+    async getChanges(gtRevision, excludeSource = null) {
+
+        let changes = this.changes.filter(function (change) { return change.rev > gtRevision });
+        if (excludeSource !== null) {
+            changes = changes.filter(function (change) { return change.source !== excludeSource });
+        }
+
+        return changes;
+    }
+
+    async commitChanges(clientIdentity) {
+        if (this.uncommittedChanges[clientIdentity]) {
+            this.changes = this.uncommittedChanges[clientIdentity].concat(this.changes);
+            delete this.uncommittedChanges[clientIdentity];
+        }
+    }
+};
+
+module.exports = {
+    MongoDBImplementation,
+    InMemoryDBImplementation
+};
