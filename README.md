@@ -14,3 +14,12 @@
 Diagram:
 [Link](https://whimsical.com/poc-program-migrations-system-architecture-sequence-diagram-XVMMZjHBHJRwJZedgWKqso)
 ![Architecture Diagram](architecture.png)
+
+
+# Setup
+
+```sh
+docker-compose up -d
+```
+
+Once up, you can access the client by browsing http://localhost/
