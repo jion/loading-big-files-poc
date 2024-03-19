@@ -15,6 +15,13 @@ Diagram:
 [Link](https://whimsical.com/poc-program-migrations-system-architecture-sequence-diagram-XVMMZjHBHJRwJZedgWKqso)
 ![Architecture Diagram](architecture.png)
 
+## Known limitations
+
+- Only supports customer data (JSONL where each line is a customer)
+- Mongo connector is not a solid implementation, just as basic as I need for this demo
+- Even though Dixie sends changes in chunks to the server, the server saves records one-by-one into the DB
+- The implementation is kind of flaky, even the original sample implementations are not production ready
+- 100k lines will cause the server to crash (OOM)
 
 # Setup
 
