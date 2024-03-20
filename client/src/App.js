@@ -29,7 +29,10 @@ function CustomerDataComponent() {
   useEffect(() => {
     const dbWorker = new Worker(new URL('workers/DexieDB.worker.js', import.meta.url), { type: 'module' });
     setDbWorker(dbWorker);
+  }, []);
 
+  useEffect(() => {
+    if (!dbWorker) return;
     const handleDbWorkerMessage = event => {
       const { from, action, timestamp } = event.data;
       if (from === "dexie_db" && action === "finished_uploading") {
@@ -38,12 +41,12 @@ function CustomerDataComponent() {
     };
 
     dbWorker.addEventListener('message', handleDbWorkerMessage);
-  }, []);
+  }, [dbWorker]);
 
   useEffect(() => {
     if (!uploadEndTime || !uploadStartTime || (uploadEndTime < uploadStartTime)) return;
     setTotalElapsedTime(uploadEndTime - uploadStartTime);
-  }, [uploadEndTime, uploadStartTime]);
+  }, [uploadEndTime]);
 
   useEffect(() => {
     if (!dbWorker) return;
@@ -95,7 +98,7 @@ function CustomerDataComponent() {
       <div>
         {uploadStartTime && <p>Upload Start: {new Date(uploadStartTime).toLocaleString()}</p>}
         {uploadEndTime && <p>Dexie Loaded: {new Date(uploadEndTime).toLocaleString()}</p>}
-        {totalElapsedTime && <p>Total Time Elapsed: {totalElapsedTime / 1000} seconds</p>}
+        {totalElapsedTime && <p>Total Time Elapsed: {totalElapsedTime} ms</p>}
       </div>
       {/* Component to adjust chunksize */}
       <div>

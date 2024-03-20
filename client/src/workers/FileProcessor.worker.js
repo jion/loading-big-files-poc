@@ -68,16 +68,15 @@ async function processStream(file, fileName, chunkSizeValue) {
     }
 
     // Send any remaining data as the final chunk
-    if (chunkAccumulator.length > 0) {
-      // console.log("[FileProcessor] Sending last chunk of data to Dexie:", chunkAccumulator);
-      postMessage({
-        from: "file_processor",
-        action: "upsert_data_in_bulk",
-        file_name: fileName,
-        data: chunkAccumulator,
-        partial: false
-      });
-    }
+    // console.log("[FileProcessor] Sending last chunk of data to Dexie:", chunkAccumulator);
+    postMessage({
+      from: "file_processor",
+      action: "upsert_data_in_bulk",
+      file_name: fileName,
+      data: chunkAccumulator,
+      partial: false
+    });
+
   } catch (error) {
     console.error("Error reading the file stream:", error);
   } finally {

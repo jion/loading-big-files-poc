@@ -24,6 +24,7 @@ onmessage = async function(event) {
         console.log("[DexieDB] Upserting data in bulk to Dexie");
         await upsertInBulk(message.data);
         if(message.partial === false) {
+            console.log("[DexieDB] Finished upserting data in bulk to Dexie");
             postMessage({
                 "from": "dexie_db",
                 "action": "finished_uploading",
